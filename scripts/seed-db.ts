@@ -2,18 +2,25 @@ import mongoose from 'mongoose'
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
+import dns from 'dns'
 
-// Load environment variables from .env if present
-const envPath = path.join(process.cwd(), '.env')
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf8')
-  for (const line of envContent.split('\n')) {
-    const trimmed = line.trim()
-    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-      const [key, ...vals] = trimmed.split('=')
-      const val = vals.join('=').replace(/^["']|["']$/g, '')
-      if (!process.env[key]) {
-        process.env[key] = val
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1'])
+} catch {}
+
+// Load environment variables from local or parent .env
+const envPaths = [path.join(process.cwd(), '.env'), path.join(process.cwd(), '../.env')]
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8')
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim()
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const [key, ...vals] = trimmed.split('=')
+        const val = vals.join('=').replace(/^["']|["']$/g, '')
+        if (!process.env[key]) {
+          process.env[key] = val
+        }
       }
     }
   }

@@ -22,8 +22,18 @@ const scoreRoutes_1 = __importDefault(require("./routes/scoreRoutes"));
 const recommendationRoutes_1 = __importDefault(require("./routes/recommendationRoutes"));
 const decisionRoutes_1 = __importDefault(require("./routes/decisionRoutes"));
 const app = (0, express_1.default)();
-// CORS with credentials support - dynamically support local dev origins (5173, 5174, etc.) and FRONTEND_URL
+// Trust reverse proxy (Render, Cloudflare, AWS ALB) for correct protocol and IP detection
+app.set('trust proxy', 1);
+// Normalize duplicate slashes in request URLs (e.g. //api/auth/login -> /api/auth/login)
+app.use((req, res, next) => {
+    if (req.url && req.url.includes('//')) {
+        req.url = req.url.replace(/\/{2,}/g, '/');
+    }
+    next();
+});
+// CORS with credentials support - dynamically support local dev origins, Vercel deployments, and FRONTEND_URL
 const allowedOrigins = [
+    'https://bid-sure-ai.vercel.app',
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
@@ -34,7 +44,10 @@ const allowedOrigins = [
     'http://127.0.0.1:3000',
 ];
 if (process.env.FRONTEND_URL) {
-    allowedOrigins.push(process.env.FRONTEND_URL);
+    const cleanFront = process.env.FRONTEND_URL.replace(/\/+$/, '');
+    if (!allowedOrigins.includes(cleanFront)) {
+        allowedOrigins.push(cleanFront);
+    }
 }
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
@@ -42,14 +55,15 @@ app.use((0, cors_1.default)({
         if (!origin)
             return callback(null, true);
         if (allowedOrigins.includes(origin) ||
-            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-            return callback(null, true);
+            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+            /^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(origin)) {
+            return callback(null, origin);
         }
-        return callback(null, true);
+        return callback(null, origin);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
 }));
 app.use(express_1.default.json());
 app.use((0, cookie_parser_1.default)());
@@ -57,6 +71,9 @@ app.use((0, cookie_parser_1.default)());
 app.use('/api/health', healthRoutes_1.default);
 // ─── Auth ───────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes_1.default);
+// Convenience aliases so /api/login and /api/me work directly
+app.use('/api/login', authRoutes_1.default);
+app.use('/api/me', authRoutes_1.default);
 // ─── Tenders ────────────────────────────────────────────────────
 app.use('/api/tenders', tenderRoutes_1.default);
 // ─── Bids ───────────────────────────────────────────────────────

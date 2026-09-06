@@ -21,8 +21,20 @@ import decisionRoutes from './routes/decisionRoutes';
 
 const app = express();
 
-// CORS with credentials support - dynamically support local dev origins (5173, 5174, etc.) and FRONTEND_URL
+// Trust reverse proxy (Render, Cloudflare, AWS ALB) for correct protocol and IP detection
+app.set('trust proxy', 1);
+
+// Normalize duplicate slashes in request URLs (e.g. //api/auth/login -> /api/auth/login)
+app.use((req, res, next) => {
+  if (req.url && req.url.includes('//')) {
+    req.url = req.url.replace(/\/{2,}/g, '/');
+  }
+  next();
+});
+
+// CORS with credentials support - dynamically support local dev origins, Vercel deployments, and FRONTEND_URL
 const allowedOrigins = [
+  'https://bid-sure-ai.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
@@ -33,7 +45,10 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
 ];
 if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
+  const cleanFront = process.env.FRONTEND_URL.replace(/\/+$/, '');
+  if (!allowedOrigins.includes(cleanFront)) {
+    allowedOrigins.push(cleanFront);
+  }
 }
 
 app.use(cors({
@@ -42,15 +57,16 @@ app.use(cors({
     if (!origin) return callback(null, true);
     if (
       allowedOrigins.includes(origin) ||
-      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      /^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(origin)
     ) {
-      return callback(null, true);
+      return callback(null, origin);
     }
-    return callback(null, true);
+    return callback(null, origin);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -60,6 +76,9 @@ app.use('/api/health', healthRoutes);
 
 // ─── Auth ───────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+// Convenience aliases so /api/login and /api/me work directly
+app.use('/api/login', authRoutes);
+app.use('/api/me', authRoutes);
 
 // ─── Tenders ────────────────────────────────────────────────────
 app.use('/api/tenders', tenderRoutes);

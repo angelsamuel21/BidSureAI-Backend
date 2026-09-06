@@ -5,10 +5,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.connectToDatabase = connectToDatabase;
 const mongoose_1 = __importDefault(require("mongoose"));
-/**
- * MongoDB Atlas Connection Manager with Connection Caching for Next.js
- */
-const MONGODB_URI = process.env.MONGODB_URI;
+const dns_1 = __importDefault(require("dns"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+// Load environment variables regardless of where the app was launched
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../.env') });
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env') });
+dotenv_1.default.config();
+// On Windows, Node's default DNS resolver frequently fails on SRV lookups (querySrv ECONNREFUSED)
+if (process.platform === 'win32' || process.env.MONGODB_URI?.startsWith('mongodb+srv://')) {
+    try {
+        dns_1.default.setServers(['8.8.8.8', '1.1.1.1']);
+    }
+    catch {
+        // Ignore if not permitted
+    }
+}
 let cached = global.mongooseCache;
 if (!cached) {
     cached = global.mongooseCache = { conn: null, promise: null };

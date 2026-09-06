@@ -1,8 +1,12 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables early from local or root .env
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import app from './app';
 import { connectToDatabase } from './db/mongodb';
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '../.env' }); // Load from root for now
 
 const PORT = process.env.PORT || 5001;
 

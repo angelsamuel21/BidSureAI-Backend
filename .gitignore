@@ -1,0 +1,11 @@
+# Environment variables
+.env
+.env*.local
+*.local
+
+# Build output
+dist
+
+# Logs
+logs
+*.log

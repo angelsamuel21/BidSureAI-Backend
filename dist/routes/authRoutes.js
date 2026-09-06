@@ -3,12 +3,33 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAuthCookieOptions = getAuthCookieOptions;
 const express_1 = require("express");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const mongodb_1 = require("../db/mongodb");
 const User_1 = require("../models/User");
 const auth_1 = require("../services/auth");
 const router = (0, express_1.Router)();
+/**
+ * Helper to compute cookie options compatible with cross-site deployments (e.g. Vercel <-> Render)
+ */
+function getAuthCookieOptions(req) {
+    const origin = req.headers.origin || '';
+    const isVercelOrigin = origin.includes('vercel.app');
+    const isHttps = req.secure ||
+        req.headers['x-forwarded-proto'] === 'https' ||
+        process.env.NODE_ENV === 'production' ||
+        Boolean(process.env.RENDER) ||
+        isVercelOrigin ||
+        Boolean(process.env.FRONTEND_URL?.startsWith('https://'));
+    return {
+        httpOnly: true,
+        path: '/',
+        maxAge: 86400 * 1000, // 24 hours
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
+    };
+}
 // ─── POST /api/auth/register ────────────────────────────────────
 router.post('/register', async (req, res) => {
     try {
@@ -48,16 +69,12 @@ router.post('/register', async (req, res) => {
             department: user.department,
         };
         const token = (0, auth_1.createSessionToken)(authUser);
-        res.cookie('gem_auth_token', token, {
-            httpOnly: true,
-            path: '/',
-            maxAge: 86400 * 1000,
-            sameSite: 'lax',
-        });
+        res.cookie('gem_auth_token', token, getAuthCookieOptions(req));
         // Never return password hash
         res.status(201).json({
             success: true,
             data: authUser,
+            user: authUser,
             token,
         });
     }
@@ -79,12 +96,7 @@ const loginHandler = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Invalid username or password', error: 'INVALID_CREDENTIALS' });
         }
         const { user, token } = authResult;
-        res.cookie('gem_auth_token', token, {
-            httpOnly: true,
-            path: '/',
-            maxAge: 86400 * 1000,
-            sameSite: 'lax',
-        });
+        res.cookie('gem_auth_token', token, getAuthCookieOptions(req));
         res.json({
             success: true,
             user,
@@ -101,7 +113,9 @@ router.post('/', loginHandler); // Legacy path
 // Also handles GET /api/auth (legacy)
 const meHandler = async (req, res) => {
     try {
-        const token = req.cookies?.gem_auth_token || req.headers.authorization?.replace('Bearer ', '');
+        const authHeader = req.headers.authorization;
+        const bearerToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : null;
+        const token = req.cookies?.gem_auth_token || bearerToken;
         if (!token) {
             return res.status(401).json({ success: false, message: 'Unauthorized', error: 'UNAUTHORIZED' });
         }
@@ -118,11 +132,11 @@ const meHandler = async (req, res) => {
 router.get('/me', meHandler);
 router.get('/', meHandler); // Legacy path
 // ─── DELETE /api/auth/logout ────────────────────────────────────
-// Also handles DELETE /api/auth (legacy)
-const logoutHandler = (_req, res) => {
+// Also handles DELETE /api/auth (legacy) and POST /api/auth/logout
+const logoutHandler = (req, res) => {
+    const cookieOpts = getAuthCookieOptions(req);
     res.cookie('gem_auth_token', '', {
-        httpOnly: true,
-        path: '/',
+        ...cookieOpts,
         maxAge: 0,
     });
     res.json({ success: true, message: 'Logged out' });

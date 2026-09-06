@@ -52,7 +52,7 @@ export function createSessionToken(user: AuthUser): string {
     exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
   })
   const b64 = Buffer.from(payload).toString('base64url')
-  const secret = process.env.AUTH_SECRET || 'sih-2026-cpcl-gem-compliance-secret'
+  const secret = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'sih-2026-cpcl-gem-compliance-secret'
   const sig = crypto.createHmac('sha256', secret).update(b64).digest('hex')
   return `${b64}.${sig}`
 }
@@ -61,7 +61,7 @@ export function verifySessionToken(token: string): AuthUser | null {
   try {
     if (!token || !token.includes('.')) return null
     const [b64, sig] = token.split('.')
-    const secret = process.env.AUTH_SECRET || 'sih-2026-cpcl-gem-compliance-secret'
+    const secret = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'sih-2026-cpcl-gem-compliance-secret'
     const expectedSig = crypto.createHmac('sha256', secret).update(b64).digest('hex')
     if (sig !== expectedSig) return null
 
@@ -71,6 +71,7 @@ export function verifySessionToken(token: string): AuthUser | null {
     return {
       id: data.id,
       name: data.name,
+      username: data.username || (data.email ? data.email.split('@')[0] : undefined),
       email: data.email,
       role: data.role,
       department: data.department,

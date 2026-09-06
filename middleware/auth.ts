@@ -16,9 +16,9 @@ declare global {
  * Checks cookie `gem_auth_token` or `Authorization: Bearer <token>` header.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token =
-    req.cookies?.gem_auth_token ||
-    req.headers.authorization?.replace('Bearer ', '')
+  const authHeader = req.headers.authorization
+  const bearerToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : null
+  const token = req.cookies?.gem_auth_token || bearerToken
 
   if (!token) {
     res.status(401).json({ success: false, message: 'Authentication required', error: 'UNAUTHORIZED' })

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { connectToDatabase } from '../db/mongodb';
 import { User } from '../models/User';
@@ -13,8 +13,31 @@ import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * Helper to compute cookie options compatible with cross-site deployments (e.g. Vercel <-> Render)
+ */
+export function getAuthCookieOptions(req: Request): express.CookieOptions {
+  const origin = req.headers.origin || '';
+  const isVercelOrigin = origin.includes('vercel.app');
+  const isHttps =
+    req.secure ||
+    req.headers['x-forwarded-proto'] === 'https' ||
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.RENDER) ||
+    isVercelOrigin ||
+    Boolean(process.env.FRONTEND_URL?.startsWith('https://'));
+
+  return {
+    httpOnly: true,
+    path: '/',
+    maxAge: 86400 * 1000, // 24 hours
+    secure: isHttps,
+    sameSite: isHttps ? 'none' : 'lax',
+  };
+}
+
 // ─── POST /api/auth/register ────────────────────────────────────
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, email, username, password, role, department } = req.body;
 
@@ -62,17 +85,13 @@ router.post('/register', async (req, res) => {
 
     const token = createSessionToken(authUser);
 
-    res.cookie('gem_auth_token', token, {
-      httpOnly: true,
-      path: '/',
-      maxAge: 86400 * 1000,
-      sameSite: 'lax',
-    });
+    res.cookie('gem_auth_token', token, getAuthCookieOptions(req));
 
     // Never return password hash
     res.status(201).json({
       success: true,
       data: authUser,
+      user: authUser,
       token,
     });
   } catch (error: any) {
@@ -82,7 +101,7 @@ router.post('/register', async (req, res) => {
 
 // ─── POST /api/auth/login ───────────────────────────────────────
 // Also handles POST /api/auth (legacy)
-const loginHandler = async (req: any, res: any) => {
+const loginHandler = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
     const loginId = username || req.body.email;
@@ -97,12 +116,7 @@ const loginHandler = async (req: any, res: any) => {
 
     const { user, token } = authResult;
 
-    res.cookie('gem_auth_token', token, {
-      httpOnly: true,
-      path: '/',
-      maxAge: 86400 * 1000,
-      sameSite: 'lax',
-    });
+    res.cookie('gem_auth_token', token, getAuthCookieOptions(req));
 
     res.json({
       success: true,
@@ -119,9 +133,11 @@ router.post('/', loginHandler); // Legacy path
 
 // ─── GET /api/auth/me ───────────────────────────────────────────
 // Also handles GET /api/auth (legacy)
-const meHandler = async (req: any, res: any) => {
+const meHandler = async (req: Request, res: Response) => {
   try {
-    const token = req.cookies?.gem_auth_token || req.headers.authorization?.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : null;
+    const token = req.cookies?.gem_auth_token || bearerToken;
 
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized', error: 'UNAUTHORIZED' });
@@ -142,11 +158,11 @@ router.get('/me', meHandler);
 router.get('/', meHandler); // Legacy path
 
 // ─── DELETE /api/auth/logout ────────────────────────────────────
-// Also handles DELETE /api/auth (legacy)
-const logoutHandler = (_req: any, res: any) => {
+// Also handles DELETE /api/auth (legacy) and POST /api/auth/logout
+const logoutHandler = (req: Request, res: Response) => {
+  const cookieOpts = getAuthCookieOptions(req);
   res.cookie('gem_auth_token', '', {
-    httpOnly: true,
-    path: '/',
+    ...cookieOpts,
     maxAge: 0,
   });
   res.json({ success: true, message: 'Logged out' });
